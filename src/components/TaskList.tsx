@@ -56,12 +56,12 @@ export default function TaskList({
         {subject && <p className="mt-1 text-sm">الفلترة مفعّلة على المادة: «{subject}»</p>}
         {tab === 'today' && undatedOpen > 0 && (
           <p className="mt-2 text-sm text-amber-300">
-            عندك {undatedOpen} {undatedOpen === 1 ? 'مهمة' : 'مهام'} بلا تاريخ التسليم — كتبان غير فـ«الكل».
+            عندك {undatedOpen} {undatedOpen === 1 ? 'مهمة' : 'مهام'} بلا تاريخ التسليم — كتبان فـ«بلا تاريخ».
           </p>
         )}
         {tab === 'today' && undatedOpen > 0 && onTabChange && (
-          <button type="button" className="btn-ghost mt-3" onClick={() => onTabChange('all')}>
-            شوف كل المهام
+          <button type="button" className="btn-ghost mt-3" onClick={() => onTabChange('undated')}>
+            شوف المهام بلا تاريخ
           </button>
         )}
       </div>

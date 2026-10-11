@@ -80,6 +80,24 @@ export async function bootstrapStorage(opts: BootstrapOptions = {}): Promise<Boo
   return result;
 }
 
+/**
+ * The service worker cannot own the backup — it is killed after ~30s idle and
+ * has no access to the app's Dexie instance. So on a periodic-sync ping it asks
+ * an open client to do the snapshot; without this listener that ping is a dead
+ * end. Safe to call more than once and harmless when the ping never arrives.
+ */
+export function listenForBackupRequests(): () => void {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker) return () => {};
+  const onMessage = (event: MessageEvent) => {
+    const data = event.data as { type?: string } | null;
+    if (data?.type !== 'BACKUP_NOW') return;
+    // gated by lastBackupAt inside, so a ping storm cannot duplicate snapshots
+    void maybeAutoBackup();
+  };
+  navigator.serviceWorker.addEventListener('message', onMessage);
+  return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+}
+
 /** Wipe everything (Settings → "حذف كل الداتا"). */
 export async function wipeAllData(): Promise<void> {
   await db.transaction('rw', db.tasks, db.backups, db.meta, async () => {

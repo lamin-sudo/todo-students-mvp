@@ -65,6 +65,35 @@ describe('tabs', () => {
     expect(week).toEqual(['هاد الأسبوع']);
   });
 
+  /**
+   * The `done` row deliberately carries NO due date: a weak fixture that gives
+   * it a deadline still passes when the implementation forgets `!t.done`,
+   * because the deadline alone keeps it out. Only a done task that is ALSO
+   * undated can catch that bug.
+   */
+  it('undated holds open tasks without a due date only', () => {
+    const list = [
+      mk({ title: 'بلا تاريخ' }),
+      mk({ title: 'منجزة بلا تاريخ', done: true, doneAt: at(-1) }),
+      mk({ title: 'بكرة', dueAt: at(1) }),
+    ];
+    expect(bucket(list, base).undated.map((t) => t.title)).toEqual(['بلا تاريخ']);
+  });
+
+  it('undated is a subset of open — it never steals from today/week/overdue', () => {
+    const b = bucket(tasks, base);
+    const openTitles = [...b.today, ...b.week, ...b.overdue].map((t) => t.title);
+    expect(openTitles).not.toContain('بلا تاريخ');
+    expect(b.undated.map((t) => t.title)).toEqual(['بلا تاريخ']);
+    // and the tab is reachable through the same selector the UI uses
+    expect(selectTasks(tasks, 'undated', '', base).map((t) => t.title)).toEqual(['بلا تاريخ']);
+  });
+
+  it('undated respects the subject filter', () => {
+    const list = [mk({ title: 'بلا تاريخ', subject: 'رياضيات' }), mk({ title: 'بلا تاريخ', subject: 'فيزيك' })];
+    expect(selectTasks(list, 'undated', 'فيزيك', base).map((t) => t.title)).toEqual(['بلا تاريخ']);
+  });
+
   it('filters by subject without dropping the tab semantics', () => {
     const onlyArabic = mk({ title: 'إنجليزي', subject: 'إنجليزية', dueAt: at(0, 20) });
     const list = [...tasks, onlyArabic];

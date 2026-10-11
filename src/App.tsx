@@ -2,17 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { useTaskStore } from './stores/tasks';
 import { useSettings } from './hooks/useSettings';
+import { useReminders } from './hooks/useReminders';
 import TaskList from './components/TaskList';
 import TaskForm from './components/TaskForm';
 import Settings from './components/Settings';
 import Stats from './components/Stats';
+import InstallBanner from './components/InstallBanner';
 
-export type Tab = 'today' | 'week' | 'overdue' | 'done' | 'all';
+export type Tab = 'today' | 'week' | 'overdue' | 'undated' | 'done' | 'all';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'today', label: 'اليوم' },
   { key: 'week', label: 'هذا الأسبوع' },
   { key: 'overdue', label: 'متأخرة' },
+  { key: 'undated', label: 'بلا تاريخ' },
   { key: 'done', label: 'منجزة' },
   { key: 'all', label: 'الكل' },
 ];
@@ -28,6 +31,9 @@ export default function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // deadline reminders + overdue badge, both feature-detected inside
+  useReminders(settings);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', settings.theme !== 'light');
@@ -57,6 +63,8 @@ export default function App() {
           </NavLink>
         </nav>
       </header>
+
+      <InstallBanner settings={settings} onChange={setSettings} />
 
       <Routes>
         <Route

@@ -5,6 +5,8 @@ export type Buckets = {
   today: Task[];
   week: Task[];
   overdue: Task[];
+  /** open tasks with no deadline at all — a subset of `open`, never of `today` */
+  undated: Task[];
   done: Task[];
   all: Task[];
 };
@@ -50,6 +52,7 @@ export function bucket(tasks: Task[], now = new Date()): Buckets {
     today: open.filter((t) => t.dueAt !== null && Date.parse(t.dueAt) <= todayEnd),
     week: open.filter((t) => t.dueAt !== null && Date.parse(t.dueAt) > todayEnd && Date.parse(t.dueAt) <= weekEnd),
     overdue: open.filter((t) => t.dueAt !== null && Date.parse(t.dueAt) < startOfToday(now).getTime()),
+    undated: open.filter((t) => t.dueAt === null),
     done: tasks.filter((t) => t.done),
     all: tasks,
   };

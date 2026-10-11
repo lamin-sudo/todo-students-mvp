@@ -42,6 +42,24 @@ async function askClientsToBackup(): Promise<void> {
   for (const client of clients) client.postMessage({ type: 'BACKUP_NOW', reason: 'periodic' });
 }
 
+/**
+ * Tapping a reminder focuses an existing window instead of opening a second
+ * one — on a phone that is the difference between "back to my tasks" and
+ * "why do I have five copies of the app".
+ */
+self.addEventListener('notificationclick', (event: Event) => {
+  const e = event as NotificationEvent;
+  e.notification.close();
+  e.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+      const existing = all[0];
+      if (existing) return existing.focus();
+      return self.clients.openWindow('/');
+    })(),
+  );
+});
+
 self.addEventListener('install', () => {
   void self.skipWaiting();
 });
