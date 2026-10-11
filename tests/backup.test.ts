@@ -232,4 +232,51 @@ describe('export → wipe → import round-trip', () => {
     await importTasks(json);
     expect(await listBackups()).toHaveLength(1);
   });
+
+  /** The exact acceptance case: 3 tasks imported into an empty database. */
+  it('importing 3 tasks into an empty database leaves exactly 1 snapshot', async () => {
+    await db.tasks.bulkPut([mk({ title: 'أ' }), mk({ title: 'ب' }), mk({ title: 'ج' })]);
+    const { json, count } = await exportTasks();
+    expect(count).toBe(3);
+
+    await db.tasks.clear();
+    await db.backups.clear();
+    await db.meta.clear();
+    expect(await db.backups.count()).toBe(0);
+
+    const res = await importTasks(json);
+
+    expect(res.imported).toBe(3);
+    expect(await db.tasks.count()).toBe(3);
+    expect(await db.backups.count()).toBe(1);
+    const snap = (await listBackups())[0];
+    expect(snap.count).toBe(3);
+  });
+
+  /**
+   * Restore is the other entry point into `applyTasks`. Note that a pre-restore
+   * snapshot is skipped when the table is empty (`backupTasks` refuses to write
+   * an empty envelope), and `lastBackupAt` is already stamped, so the
+   * fresh-device hook must stay out of the way entirely: no extra snapshot.
+   */
+  it('restore adds no extra snapshot beyond pre-restore', async () => {
+    await db.tasks.bulkPut([mk({ title: 'محفوظة' }), mk({ title: 'محفوظة 2', priority: 'high' })]);
+    const { id } = await backupTasks('manual');
+    expect(id).not.toBeNull();
+    expect(await listBackups()).toHaveLength(1);
+
+    // the user then deletes everything by hand
+    await db.tasks.clear();
+    expect(await db.tasks.count()).toBe(0);
+
+    const res = await restoreFromBackup(id!);
+
+    expect(res.imported).toBe(2);
+    expect(await db.tasks.count()).toBe(2);
+    // still just the manual snapshot: pre-restore was skipped (empty table) and
+    // the fresh-device hook no-opped on the already-stamped lastBackupAt
+    const snaps = await listBackups();
+    expect(snaps).toHaveLength(1);
+    expect(snaps[0].id).toBe(id);
+  });
 });
