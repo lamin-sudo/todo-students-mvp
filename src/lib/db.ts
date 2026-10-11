@@ -1,12 +1,14 @@
 import Dexie, { type Table } from 'dexie';
-import type { BackupRecord, MetaRecord, Task, TaskInput } from './schemas';
+import type { BackupRecord, MetaRecord, OutboxRecord, Task, TaskInput, TombstoneRecord } from './schemas';
 
-export type { BackupRecord, MetaRecord, Task, TaskInput, Priority, ValidationReport } from './schemas';
+export type { BackupRecord, MetaRecord, OutboxRecord, Task, TaskInput, TombstoneRecord, Priority, ValidationReport } from './schemas';
 
 export class TodoDB extends Dexie {
   tasks!: Table<Task, string>;
   backups!: Table<BackupRecord, string>;
   meta!: Table<MetaRecord, string>;
+  outbox!: Table<OutboxRecord, number>;
+  tombstones!: Table<TombstoneRecord, string>;
 
   constructor(name: string) {
     super(name);
@@ -15,6 +17,23 @@ export class TodoDB extends Dexie {
       tasks: 'id, dueAt, subject, priority, done, updatedAt, createdAt',
       backups: 'id, createdAt, reason',
       meta: 'key',
+    });
+    /*
+     * v2 — Phase 2 sync. Pure addition: Dexie upgrades in place, so an existing
+     * install keeps every row and simply gains two empty stores. Never edit the
+     * v1 block above; a version's schema is a historical fact.
+     *
+     * `outbox` is the sync queue and lives HERE, not on the server: the queue
+     * must be writable exactly when the network is not, which is the whole point.
+     * `tombstones` remembers ids the user deleted so a later pull of an older
+     * remote copy cannot resurrect them (a hard DELETE cannot propagate).
+     */
+    this.version(2).stores({
+      tasks: 'id, dueAt, subject, priority, done, updatedAt, createdAt',
+      backups: 'id, createdAt, reason',
+      meta: 'key',
+      outbox: '++seq, taskId, op, nextAttemptAt',
+      tombstones: 'id, deletedAt',
     });
   }
 

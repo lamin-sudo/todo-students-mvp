@@ -98,6 +98,41 @@ export interface MetaRecord {
   value: unknown;
 }
 
+/* ------------------------------------------------------------------ *
+ * Phase 2 — sync
+ * ------------------------------------------------------------------ */
+
+/**
+ * One pending mutation. The queue lives in IndexedDB on purpose: it has to be
+ * writable exactly when the network is not.
+ *
+ * A `delete` is carried as an upsert with `deletedAt` set (a tombstone), because
+ * a hard DELETE cannot propagate — the other device either never learns about it
+ * or re-pushes the copy it still holds.
+ */
+export interface OutboxRecord {
+  /** auto-increment, doubles as the FIFO ordering */
+  seq?: number;
+  taskId: string;
+  /** `upsert` covers create/update/soft-delete; `delete` is a hard delete of a row the server already knows about */
+  op: 'upsert' | 'delete';
+  /** the task's revision at enqueue time — LAST-write-wins needs it */
+  revision: number;
+  /** the full task row as it must be written remotely (always the newest local copy) */
+  payload: Task;
+  queuedAt: string;
+  attempts: number;
+  /** exponential backoff cursor; the op is skipped before this instant */
+  nextAttemptAt: number;
+  lastError: string | null;
+}
+
+/** Remembers a locally-deleted id so an older remote copy cannot resurrect it. */
+export interface TombstoneRecord {
+  id: string;
+  deletedAt: string;
+}
+
 export type ValidationReport = {
   total: number;
   accepted: Task[];

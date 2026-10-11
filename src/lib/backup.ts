@@ -79,7 +79,12 @@ export function buildEnvelope(tasks: Task[], exportedAt = nowIso()): string {
   return JSON.stringify({ version: 1, exported_at: exportedAt, tasks });
 }
 
-function isNewer(incoming: Task, current: Task): boolean {
+/**
+ * Last-write-wins comparison shared by the JSON import AND the remote sync.
+ * One rule, one implementation: two code paths deciding "which copy is newer"
+ * differently is how silent data loss gets in.
+ */
+export function isNewer(incoming: Task, current: Task): boolean {
   if (incoming.updatedAt !== current.updatedAt) return incoming.updatedAt > current.updatedAt;
   return incoming.revision > current.revision;
 }
@@ -108,7 +113,7 @@ export function mergeTasks(current: Task[], incoming: Task[]): ValidationReport 
 
 /** Merge a validated batch into the live table inside one transaction. */
 async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
-  const result = await db.transaction('rw', db.tasks, async () => {
+  const { report: result, changedRows } = await db.transaction('rw', db.tasks, async () => {
     const current = await db.tasks.toArray();
     const byId = new Map(current.map((t) => [t.id, t]));
     const changed: Task[] = [];
@@ -131,7 +136,9 @@ async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
       skipped,
       applied: changed.length,
     };
-    return r;
+    // `changed` rides along so the sync outbox can be fed the exact rows that
+    // landed, instead of re-deriving them outside the transaction and racing
+    return { report: r, changedRows: changed };
   });
 
   /*
@@ -146,6 +153,21 @@ async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
     await maybeSnapshotFirstTask();
   } catch {
     /* a failed snapshot must never fail the import the user asked for */
+  }
+
+  /*
+   * D5: imported/restored rows must reach the sync outbox too. A task that never
+   * enters the outbox is invisible to sync forever — it would sit on this device
+   * only, and the next pull would not know it exists. Same single choke point as
+   * the snapshot, so there is no second place to forget.
+   */
+  if (result.applied > 0) {
+    try {
+      const { isArmed, enqueueMany } = await import('./sync/outbox');
+      if (await isArmed()) await enqueueMany(changedRows);
+    } catch {
+      /* sync is optional; a failure here must not fail the import */
+    }
   }
 
   return result;

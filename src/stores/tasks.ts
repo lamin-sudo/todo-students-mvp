@@ -2,6 +2,23 @@ import { create } from 'zustand';
 import { db, newTask, type TaskInput } from '../lib/db';
 import type { Task, TaskDraft } from '../lib/schemas';
 import { maybeSnapshotFirstTask, mergeTasks } from '../lib/backup';
+import { enqueue, enqueueDelete, isArmed } from '../lib/sync/outbox';
+
+/**
+ * Queue a sync op without ever letting sync break the local write.
+ *
+ * The user's save already happened against IndexedDB; if the queue write fails
+ * the task is still safe, and the next sign-in pushes the whole local history.
+ */
+async function queue(task: Task, op: 'upsert' | 'delete' = 'upsert'): Promise<void> {
+  try {
+    if (!(await isArmed())) return;
+    if (op === 'delete') await enqueueDelete(task.id);
+    else await enqueue(task);
+  } catch {
+    /* sync is optional; the local write is not */
+  }
+}
 
 /**
  * Task store. Every mutation writes to IndexedDB then re-reads the affected
@@ -57,6 +74,7 @@ export const useTaskStore = create<State>((set, get) => ({
     } catch {
       // a failed snapshot must never fail the save the user asked for
     }
+    await queue(task);
     await get().load();
     return task;
   },
@@ -72,6 +90,7 @@ export const useTaskStore = create<State>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     await db.putTask(next);
+    await queue(next);
     await get().load();
   },
 
@@ -83,7 +102,11 @@ export const useTaskStore = create<State>((set, get) => ({
   },
 
   remove: async (id) => {
+    // read the row BEFORE deleting it: `enqueueDelete` needs the last synced
+    // revision to build a tombstone the server will accept
+    const current = await db.tasks.get(id);
     await db.tasks.delete(id);
+    if (current) await queue(current, 'delete');
     await get().load();
   },
 
