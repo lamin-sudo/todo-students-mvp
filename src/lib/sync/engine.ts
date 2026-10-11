@@ -9,7 +9,15 @@ import {
   type PushResult,
   type SyncTransport,
 } from './transport';
-import { dueOps, markFailed, parkedOps, removeOp, setLastSyncAt, getLastSyncAt } from './outbox';
+import {
+  dueOps,
+  enqueueMany,
+  markFailed,
+  parkedOps,
+  removeOp,
+  setLastSyncAt,
+  getLastSyncAt,
+} from './outbox';
 
 /* ------------------------------------------------------------------ *
  * PURE planning — everything that decides what happens lives here,
@@ -278,7 +286,9 @@ export async function bootstrapRemote(transport: SyncTransport, userId: string):
     await setLastSyncAt(new Date().toISOString());
     return { mode: 'empty', pushed: 0 };
   }
-  const { enqueueMany } = await import('./outbox');
+  // enqueueMany is a static import: outbox.ts is already in this module's graph
+  // (stores/tasks.ts imports it for every task write), so an `await import()`
+  // here would be folded away by Rollup and only mislead the next reader.
   await enqueueMany(local);
   const flush = await flushOutbox(transport, userId);
   return { mode: 'push-local', pushed: flush.settled };

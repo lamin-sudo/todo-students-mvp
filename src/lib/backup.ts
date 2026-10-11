@@ -6,6 +6,10 @@ import {
   type Task,
   type ValidationReport,
 } from './schemas';
+// Static, not `await import()`: outbox.ts imports only ./db and ./schemas, so the
+// graph stays acyclic, and stores/tasks.ts already pulls it into the main chunk —
+// a dynamic import here is folded away by Rollup and only pretends to be lazy.
+import { enqueueMany, isArmed } from './sync/outbox';
 
 /** Hard ceiling on how many snapshots we keep. */
 export const MAX_BACKUPS = 8;
@@ -163,7 +167,6 @@ async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
    */
   if (result.applied > 0) {
     try {
-      const { isArmed, enqueueMany } = await import('./sync/outbox');
       if (await isArmed()) await enqueueMany(changedRows);
     } catch {
       /* sync is optional; a failure here must not fail the import */
