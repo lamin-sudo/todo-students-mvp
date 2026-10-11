@@ -25,7 +25,10 @@ create extension if not exists pgcrypto;
 -- ---------------------------------------------------------------------------
 create table if not exists public.tasks (
   id         uuid primary key default gen_random_uuid(),
-  user_id    uuid not null references auth.users (id) on delete cascade,
+  -- default auth.uid() so an INSERT that omits user_id lands on the caller's own
+  -- row instead of failing RLS on a NULL comparison. The WITH CHECK policy still
+  -- rejects an explicit foreign user_id — the default is convenience, not a hole.
+  user_id    uuid not null default auth.uid() references auth.users (id) on delete cascade,
   title      text not null check (char_length(btrim(title)) between 1 and 200),
   subject    text not null default '' check (char_length(subject) <= 60),
   due_at     timestamptz,
@@ -77,8 +80,11 @@ create index if not exists tasks_user_done_idx    on public.tasks (user_id, done
 -- 4. RLS — enable, force, and deny by default
 -- ---------------------------------------------------------------------------
 alter table public.tasks enable row level security;
--- FORCE so even the table owner (postgres) goes through policies: no accidental
--- bypass from a future dashboard query or a SECURITY DEFINER helper.
+-- FORCE puts the table OWNER under policies. Verified caveat, measured not
+-- assumed: in this project `postgres` and `service_role` carry the BYPASSRLS
+-- attribute, and BYPASSRLS wins over FORCE. So FORCE is hygiene, NOT the
+-- protection. The protection is (1) anon holds zero privileges and (2) the
+-- four `authenticated` policies.
 alter table public.tasks force row level security;
 
 -- Explicit grants: `anon` gets nothing at all (no policy + no privilege).
