@@ -19,6 +19,12 @@
 --   churn loop (client clock vs server clock disagreeing forever).
 --
 -- IDEMPOTENT: safe to re-run.
+--
+-- GOTCHA (cost me a 42702 round): RETURNS TABLE(...) declares `id`, `updated_at`,
+-- `revision` and `applied` as PL/pgSQL VARIABLES, so every unqualified mention of
+-- those names inside the body is ambiguous ("column reference is ambiguous").
+-- `#variable_conflict use_column` resolves every ambiguous name to the COLUMN,
+-- which is what is wanted in all of them. Do not remove this line.
 -- ============================================================================
 
 create or replace function public.push_tasks(batch jsonb)
@@ -27,6 +33,7 @@ language plpgsql
 security invoker
 set search_path = ''
 as $$
+#variable_conflict use_column
 declare
   uid uuid := auth.uid();
 begin
