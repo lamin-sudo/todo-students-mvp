@@ -10,3 +10,6 @@ dist-ssr
 coverage
 .DS_Store
 Thumbs.db
+
+.vercel
+.env*
