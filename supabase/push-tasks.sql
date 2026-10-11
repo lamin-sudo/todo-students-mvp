@@ -104,10 +104,21 @@ revoke all on function public.push_tasks(jsonb) from anon;
 grant execute on function public.push_tasks(jsonb) to authenticated;
 
 -- ============================================================================
--- Verification (run against a real GoTrue JWT, not `set local role`):
---   A pushes a new row            -> applied=true, updated_at stamped by now()
---   A pushes it again, rev+1      -> applied=true, updated_at moves
---   A pushes it again, rev-1      -> applied=false, revision = current server rev
---   B pushes A's id with rev+999  -> applied=false (RLS USING + user_id guard)
---   anon calls the RPC            -> 401 / 42501
+-- Verification — RUN AGAINST REAL GoTrue JWTs (measured 2026-10-11, not assumed):
+--
+--  1. A pushes a NEW row, rev 1      -> [{revision:1, applied:true, updated_at stamped}]
+--  2. A pushes same row, rev 2       -> [applied:true, updated_at MOVES]      (1s later)
+--  3. A pushes same row, rev 1       -> [applied:false, revision:2]  <- server rev
+--  4. B pushes A's id, rev 999       -> [applied:false, revision:null]
+--     NOTE, and this is the intended behaviour, not a bug: `revision:null` here is
+--     RLS working. B cannot see A's row (the `left join public.tasks` yields
+--     nothing), so the RPC refuses to leak A's state to B. The contract is
+--     `applied:false` => "pull and reconcile"; `revision:null` means "not even
+--     visible to you", which only happens across users. It cannot happen within
+--     one account (two devices), because both share the same user_id — case 3
+--     proves the same-user path returns the real server revision.
+--  5. A's row afterwards             -> title still the rev-2 value: NOT hijacked
+--  6. same id twice in one batch     -> one row, highest revision (7) wins
+--  7. tombstone push, rev 3          -> applied:true, deleted_at set
+--  8. anon calls the RPC             -> 401 42501 permission denied for function
 -- ============================================================================
