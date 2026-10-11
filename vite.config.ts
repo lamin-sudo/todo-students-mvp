@@ -1,8 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** `@/foo` → `<root>/src/foo`. Kept in sync with tsconfig `paths`. */
+const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
+
 export default defineConfig({
+  resolve: { alias },
   plugins: [
     react(),
     VitePWA({

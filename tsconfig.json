@@ -14,7 +14,9 @@
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client", "vite-plugin-pwa/client", "vitest/globals"]
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+    "types": ["node", "vite/client", "vite-plugin-pwa/client", "vitest/globals"]
   },
   "include": ["src", "tests", "vite.config.ts"]
 }

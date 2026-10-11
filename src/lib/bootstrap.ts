@@ -3,10 +3,16 @@
  * unit-tested and so it runs exactly once, before the first paint.
  *
  * Order:
- *  1. `maybeAutoBackup()` — guaranteed weekly snapshot (all browsers, no perms).
- *  2. `requestPersistentStorage()` — Chromium may say yes; Safari returns false
+ *  1. `requestPersistentStorage()` — asked FIRST so the very first snapshot is
+ *     written into storage the browser has already been told not to evict.
+ *     Bounded by a timeout: some engines never settle the promise, and a
+ *     hanging `persist()` must never cost us the snapshot. Safari returns false
  *     silently and MUST NOT be presented as "press here to retry".
+ *  2. `maybeAutoBackup()` — guaranteed weekly snapshot (all browsers, no perms).
  *  3. `registerPeriodicBackup()` — bonus for installed Chromium PWAs only.
+ *
+ * `main.tsx` calls this fire-and-forget (`void bootstrapStorage()`), so none of
+ * it sits on the critical path: the first paint never waits for IndexedDB.
  */
 import { db, requestPersistentStorage, storageEstimate } from './db';
 import { maybeAutoBackup, registerPeriodicBackup } from './backup';
@@ -19,19 +25,44 @@ export type BootstrapResult = {
   quota: number;
 };
 
-export async function bootstrapStorage(): Promise<BootstrapResult> {
+/** How long we are willing to wait for `persist()` before snapshotting anyway. */
+export const PERSIST_TIMEOUT_MS = 1500;
+
+export type BootstrapOptions = {
+  /** Override the `persist()` grace period (ms). Tests pass a tiny value. */
+  persistTimeoutMs?: number;
+};
+
+function settleWithin<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
+export async function bootstrapStorage(opts: BootstrapOptions = {}): Promise<BootstrapResult> {
   const result: BootstrapResult = { backedUp: false, persistent: false, periodic: false, usage: 0, quota: 0 };
+  const persistTimeoutMs = opts.persistTimeoutMs ?? PERSIST_TIMEOUT_MS;
+
+  try {
+    result.persistent = await settleWithin(requestPersistentStorage(), persistTimeoutMs, false);
+  } catch {
+    /* ignore */
+  }
 
   try {
     result.backedUp = await maybeAutoBackup();
   } catch {
     /* a failed snapshot must never break the app; Settings surfaces it later */
-  }
-
-  try {
-    result.persistent = await requestPersistentStorage();
-  } catch {
-    /* ignore */
   }
 
   try {
