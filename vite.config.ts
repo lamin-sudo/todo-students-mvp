@@ -8,6 +8,18 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
 
 export default defineConfig({
   resolve: { alias },
+  build: {
+    rollupOptions: {
+      output: {
+        /**
+         * Stable name for the lazily-imported Supabase chunk, so the service
+         * worker can exclude it from the precache by pattern.
+         */
+        manualChunks: (id) =>
+          id.includes('@supabase/supabase-js') ? 'supabase' : undefined,
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -37,6 +49,14 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        /**
+         * The Supabase chunk is ~230 kB of auth client. It is only ever
+         * `await import()`ed when a signed-in user syncs — which requires
+         * network anyway — so precaching it would make every visitor, including
+         * the ones who never sign in, download it at install time. Excluded on
+         * purpose; the dynamic import fetches it on demand.
+         */
+        globIgnores: ['**/supabase-*.js'],
       },
       devOptions: { enabled: false },
     }),

@@ -8,6 +8,7 @@ import TaskForm from './components/TaskForm';
 import Settings from './components/Settings';
 import Stats from './components/Stats';
 import InstallBanner from './components/InstallBanner';
+import SyncBanner from './components/SyncBanner';
 
 export type Tab = 'today' | 'week' | 'overdue' | 'undated' | 'done' | 'all';
 
@@ -65,6 +66,7 @@ export default function App() {
       </header>
 
       <InstallBanner settings={settings} onChange={setSettings} />
+      <SyncBanner />
 
       <Routes>
         <Route

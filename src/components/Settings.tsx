@@ -12,6 +12,8 @@ import {
   notificationsSupported,
   permissionState,
 } from '../lib/notifications';
+import { useSync } from '../hooks/useSync';
+import { MAX_ATTEMPTS } from '../lib/sync/outbox';
 
 type Props = {
   settings: SettingsType;
@@ -33,6 +35,8 @@ export default function Settings({ settings, onChange }: Props) {
   const [invalid, setInvalid] = useState<ValidationReport['skipped']>([]);
   const [perm, setPerm] = useState<NotificationPermission | 'unsupported'>(() => permissionState());
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState('');
+  const { state: sync, signIn, signOut, syncNow } = useSync();
 
   const refresh = useCallback(async () => {
     setEst(await storageEstimate());
@@ -127,6 +131,18 @@ export default function Settings({ settings, onChange }: Props) {
         </p>
       )}
 
+      {/* sync results surface here: same slot as every other action's feedback */}
+      {(sync.error || sync.message) && (
+        <p
+          className={`card text-sm ${
+            sync.error ? 'border-red-500/40 bg-red-500/10 text-red-100' : 'border-surface-line'
+          }`}
+          role="status"
+        >
+          {sync.error ?? sync.message}
+        </p>
+      )}
+
       {/* ---------- storage ---------- */}
       <div className="card space-y-3">
         <h2 className="text-sm font-semibold">التخزين</h2>
@@ -214,6 +230,101 @@ export default function Settings({ settings, onChange }: Props) {
             </li>
           ))}
         </ul>
+      </div>
+
+      {/* ---------- sync (Phase 2) ---------- */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">المزامنة</h2>
+          <span className="text-xs text-slate-400">
+            {!sync.configured
+              ? 'غير مفعّلة'
+              : !sync.connected
+                ? 'غير متصل'
+                : sync.syncing
+                  ? 'كنزامن…'
+                  : sync.online
+                    ? 'متصل'
+                    : 'بلا أنترنيت'}
+          </span>
+        </div>
+
+        {!sync.configured ? (
+          <p className="text-xs text-slate-400">
+            هاد النسخة مبنية بلا إعدادات Supabase، إذن المزامنة <strong>ما كايناش</strong> — ماشي معطّلة.
+            التطبيق كامل خدّام محلياً فـIndexedDB كيما قبل.
+          </p>
+        ) : !sync.connected ? (
+          <>
+            <p className="text-xs text-slate-400">
+              دخل بالإيميل باش تلقى مهامك فكل أجهزتك. <strong>بلا كلمة سر</strong> — كنصيفطو ليك رابط.
+              داتاك المحلية ما كتتمسحش: إلا كان الحساب خاوي، كنرفعو المهام ديالك ليه. إلا كان فيه داتا،
+              كنزلوها هي (الحساب كيغلب).
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="email"
+                dir="ltr"
+                placeholder="name@example.com"
+                className="min-w-[14rem] flex-1 rounded-xl border border-surface-line bg-surface px-3 py-2 text-sm"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy || !email.includes('@')}
+                onClick={async () => {
+                  setBusy(true);
+                  await signIn(email.trim());
+                  setBusy(false);
+                }}
+              >
+                صيفط رابط الدخول
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-slate-300" dir="ltr">
+              {sync.email}
+            </p>
+            <ul className="space-y-1 text-xs text-slate-400">
+              <li>
+                آخر مزامنة:{' '}
+                {sync.lastSyncAt ? dtf.format(new Date(sync.lastSyncAt)) : 'مازال ما تزامناش'}
+              </li>
+              <li>
+                عمليات في الانتظار: {sync.pending}
+                {sync.parked > 0 && ` · عالقة: ${sync.parked}`}
+              </li>
+            </ul>
+
+            {sync.parked > 0 && (
+              <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200">
+                {sync.parked} عملية فشلت {MAX_ATTEMPTS} مرات وتوقّفت. اضغط «زامن دابا» باش تعاود من الصفر.
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={sync.syncing}
+                onClick={() => void syncNow()}
+              >
+                {sync.syncing ? 'كنزامن…' : 'زامن دابا'}
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => void signOut()}>
+                خروج
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              الخروج كيحيّد الجلسة فقط. <strong>المهام والعمليات المعلّقة كيبقاو محليين</strong> — ما
+              كيتحيدش والو من IndexedDB.
+            </p>
+          </>
+        )}
       </div>
 
       {/* ---------- preferences ---------- */}

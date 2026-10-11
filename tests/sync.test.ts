@@ -662,6 +662,16 @@ describe('offline bundle stays offline', () => {
     }
   });
 
+  it('keeps the Supabase chunk OUT of the service-worker precache', () => {
+    // Without this, every visitor — including the ones who never sign in —
+    // downloads ~230 kB of auth client when the PWA installs. It regresses
+    // silently (the app still works), so it is pinned here.
+    const cfg = readFileSync(fileURLToPath(new URL('../vite.config.ts', import.meta.url)), 'utf8');
+    expect(cfg).toMatch(/globIgnores:\s*\[[^\]]*supabase/);
+    // ...which only works if the chunk has a stable, matchable name
+    expect(cfg).toMatch(/manualChunks[\s\S]{0,200}supabase/);
+  });
+
   it('the sync client is imported dynamically, never statically', () => {
     const engine = readFileSync(fileURLToPath(new URL('../src/lib/sync/engine.ts', import.meta.url)), 'utf8');
     // a static import of supabase-js anywhere in the sync path would drag the
