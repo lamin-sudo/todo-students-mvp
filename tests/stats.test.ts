@@ -94,6 +94,19 @@ describe('tabs', () => {
     expect(selectTasks(list, 'undated', 'فيزيك', base).map((t) => t.title)).toEqual(['بلا تاريخ']);
   });
 
+  /**
+   * The other direction: a done task that is re-opened must come BACK to
+   * `undated`. Guards against a one-way filter that drops dateless tasks
+   * permanently once they have been checked off.
+   */
+  it('re-opening a dateless task returns it to undated', () => {
+    const finished = mk({ title: 'رجعت', done: true, doneAt: at(-1), dueAt: null });
+    expect(bucket([finished], base).undated).toHaveLength(0);
+
+    const reopened: Task = { ...finished, done: false, doneAt: null };
+    expect(bucket([reopened], base).undated.map((t) => t.title)).toEqual(['رجعت']);
+  });
+
   it('filters by subject without dropping the tab semantics', () => {
     const onlyArabic = mk({ title: 'إنجليزي', subject: 'إنجليزية', dueAt: at(0, 20) });
     const list = [...tasks, onlyArabic];

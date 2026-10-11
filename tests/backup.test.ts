@@ -205,4 +205,31 @@ describe('export → wipe → import round-trip', () => {
     expect(back.imported).toBe(2);
     expect((await db.tasks.toArray()).map((t) => t.title).sort()).toEqual(['أ', 'ب']);
   });
+
+  /**
+   * Importing onto a fresh device is the same hole as "first task": boot found
+   * an empty table, so nothing was snapshotted. The imported rows must get one.
+   */
+  it('importing onto a fresh device snapshots the imported rows immediately', async () => {
+    await db.tasks.bulkPut([mk({ title: 'من الملف' })]);
+    const { json } = await exportTasks();
+
+    // a genuinely fresh device: no tasks, no snapshots, no lastBackupAt
+    await db.tasks.clear();
+    await db.backups.clear();
+    await db.meta.clear();
+    expect(await listBackups()).toHaveLength(0);
+
+    const res = await importTasks(json);
+
+    expect(res.imported).toBe(1);
+    const snaps = await listBackups();
+    expect(snaps).toHaveLength(1);
+    expect(snaps[0].count).toBe(1);
+    expect(await db.meta.get('lastBackupAt')).toBeTruthy();
+
+    // and a second import in the same window must not pile on another snapshot
+    await importTasks(json);
+    expect(await listBackups()).toHaveLength(1);
+  });
 });

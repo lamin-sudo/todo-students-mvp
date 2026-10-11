@@ -108,7 +108,7 @@ export function mergeTasks(current: Task[], incoming: Task[]): ValidationReport 
 
 /** Merge a validated batch into the live table inside one transaction. */
 async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
-  return db.transaction('rw', db.tasks, async () => {
+  const result = await db.transaction('rw', db.tasks, async () => {
     const current = await db.tasks.toArray();
     const byId = new Map(current.map((t) => [t.id, t]));
     const changed: Task[] = [];
@@ -125,14 +125,30 @@ async function applyTasks(incoming: Task[]): Promise<ValidationReport> {
     });
 
     if (changed.length) await db.tasks.bulkPut(changed);
-    const result: ValidationReport = {
+    const r: ValidationReport = {
       total: incoming.length,
       accepted: [...byId.values()],
       skipped,
       applied: changed.length,
     };
-    return result;
+    return r;
   });
+
+  /*
+   * Importing or restoring onto a FRESH device leaves rows with no snapshot —
+   * `maybeAutoBackup()` at boot found an empty table and wrote nothing, so the
+   * restored data would wait for the next visit. Same `lastBackupAt` gate as the
+   * first-task hook, so this can never double up. Deliberately OUTSIDE the
+   * transaction above: a snapshot opens its own rw transaction over db.backups,
+   * and nesting it inside this one would only invite deadlocks.
+   */
+  try {
+    await maybeSnapshotFirstTask();
+  } catch {
+    /* a failed snapshot must never fail the import the user asked for */
+  }
+
+  return result;
 }
 
 /* ------------------------------------------------------------------ *
