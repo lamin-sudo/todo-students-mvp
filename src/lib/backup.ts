@@ -256,6 +256,23 @@ export async function maybeAutoBackup(intervalMs = BACKUP_INTERVAL_MS): Promise<
 }
 
 /**
+ * Snapshot taken at the moment the first task is created.
+ *
+ * `maybeAutoBackup()` alone leaves a brand-new install unprotected: it runs at
+ * boot, finds an empty table, writes nothing (and does not stamp `lastBackupAt`),
+ * so the first task a student adds is not snapshotted until the NEXT visit —
+ * exactly the data most likely to be lost. Called after the task is persisted,
+ * so the snapshot contains it.
+ *
+ * The `lastBackupAt` gate is the double-backup guard: if boot already
+ * snapshotted during this session, this is a no-op. Returns true only when a
+ * new snapshot was actually written.
+ */
+export async function maybeSnapshotFirstTask(intervalMs = BACKUP_INTERVAL_MS): Promise<boolean> {
+  return maybeAutoBackup(intervalMs);
+}
+
+/**
  * Bonus only: Chromium + installed PWA. Never the sole mechanism — the SW is
  * killed after ~30s idle so setInterval inside it is useless.
  */

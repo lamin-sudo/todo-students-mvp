@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { db, newTask, type TaskInput } from '../lib/db';
 import type { Task, TaskDraft } from '../lib/schemas';
-import { mergeTasks } from '../lib/backup';
+import { maybeSnapshotFirstTask, mergeTasks } from '../lib/backup';
 
 /**
  * Task store. Every mutation writes to IndexedDB then re-reads the affected
@@ -50,6 +50,13 @@ export const useTaskStore = create<State>((set, get) => ({
       priority: draft.priority,
     });
     await db.putTask(task);
+    try {
+      // First task of a fresh install: snapshot it now instead of on the next
+      // visit. No-ops when boot (or a periodic ping) already snapshotted.
+      await maybeSnapshotFirstTask();
+    } catch {
+      // a failed snapshot must never fail the save the user asked for
+    }
     await get().load();
     return task;
   },
