@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
-  "rewrites": [{ "source": "/((?!assets/|icons/|sw.js|workbox-.*|manifest.webmanifest).*)", "destination": "/index.html" }],
+  "rewrites": [{ "source": "/((?!assets/|icons/|api/|sw.js|registerSW.js|workbox-.*|manifest.webmanifest).*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/assets/(.*)",
