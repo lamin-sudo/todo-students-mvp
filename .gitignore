@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+.vite
+*.local
+.vercel
+.env
+.env.*
+!.env.example
+coverage
+.DS_Store
+Thumbs.db
