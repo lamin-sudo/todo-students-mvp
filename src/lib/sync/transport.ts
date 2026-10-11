@@ -16,6 +16,14 @@ export type PushResult = {
   applied: boolean;
 };
 
+/**
+ * One item of a push batch.
+ *
+ * `op: 'delete'` is sent as a TOMBSTONE through the same RPC, not as a DELETE
+ * statement — see the note on `toBatch`. There is deliberately no separate
+ * hard-delete call in this interface: a delete that the other devices cannot
+ * see is a delete that comes back.
+ */
 export type PushItem = { task: Task; op: 'upsert' | 'delete' };
 
 export type PullPage = {
@@ -35,13 +43,19 @@ export type PullPage = {
 export interface SyncTransport {
   push(items: PushItem[], userId: string): Promise<PushResult[]>;
   pull(since: string | null, limit: number): Promise<PullPage>;
-  hardDelete(id: string): Promise<void>;
 }
 
 /** PostgREST caps a response; 500 keeps each round-trip small and resumable. */
 export const PULL_PAGE_SIZE = 500;
 
-/** Build the JSON payload `push_tasks(batch)` expects. */
+/** Build the JSON payload `push_tasks(batch)` expects.
+ *
+ * A delete travels as a TOMBSTONE (`deleted_at` + a bumped revision) through the
+ * SAME RPC as an edit. `DELETE /tasks?id=eq.X` would be a single round trip and
+ * tempting, but it is invisible to every other device: they keep showing the
+ * task, and the next edit on one of them pushes the row straight back. A
+ * tombstone is the only form of delete the pull can actually deliver.
+ */
 export function toBatch(items: PushItem[], userId: string): Record<string, unknown>[] {
   return items.map(({ task, op }) => {
     const row = taskToRow(task, userId, op === 'delete' ? task.updatedAt : null);

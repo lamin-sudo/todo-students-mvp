@@ -70,13 +70,11 @@ type FakeOptions = {
   pages?: PullPage[];
 };
 
-function fakeTransport(opts: FakeOptions = {}): SyncTransport & { pushedBatches: PushItem[][]; deleted: string[] } {
+function fakeTransport(opts: FakeOptions = {}): SyncTransport & { pushedBatches: PushItem[][] } {
   const pushedBatches: PushItem[][] = [];
-  const deleted: string[] = [];
   let page = 0;
   return {
     pushedBatches,
-    deleted,
     async push(items) {
       pushedBatches.push(items);
       if (opts.pushImpl) return opts.pushImpl(items);
@@ -92,9 +90,6 @@ function fakeTransport(opts: FakeOptions = {}): SyncTransport & { pushedBatches:
       const p = opts.pages?.[page] ?? { rows: [], maxUpdatedAt: null };
       page += 1;
       return p;
-    },
-    async hardDelete(id) {
-      deleted.push(id);
     },
   };
 }
@@ -530,14 +525,56 @@ describe('flushOutbox', () => {
     expect(transport.pushedBatches).toHaveLength(0);
   });
 
-  it('hard-deletes a queued delete op rather than upserting a tombstone', async () => {
-    const t = mk({ id: 'doomed' });
+  it('sends a delete as a TOMBSTONE in the batch, not as a DELETE statement', async () => {
+    // Regression: this used to hit the transport's hardDelete(), which is a
+    // no-op for every OTHER device. The task stayed visible on device B and B
+    // could push it straight back. The tombstone has to go through push.
+    const t = mk({ id: uid(), revision: 4 });
     await db.tasks.put(t);
     await enqueueDelete(t.id);
     const transport = fakeTransport();
     await flushOutbox(transport, 'user-1');
-    expect(transport.deleted).toEqual(['doomed']);
+
+    expect(transport.pushedBatches).toHaveLength(1);
+    const batch = toBatch(transport.pushedBatches[0], 'user-1');
+    expect(batch).toHaveLength(1);
+    expect(batch[0]).toMatchObject({ id: t.id, revision: 5 }); // revision bumped
+    expect(batch[0].deleted_at).toBeTruthy(); // <- the part other devices can pull
     expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('the round trip works: B pulls the tombstone and loses the task', async () => {
+    // end-to-end proof that the delete is actually deliverable
+    const t = mk({ id: uid(), title: 'لازم يتحيد', revision: 4 });
+    await db.tasks.put(t);
+    await enqueueDelete(t.id);
+
+    const pushed = fakeTransport();
+    await flushOutbox(pushed, 'user-1');
+    const wire = toBatch(pushed.pushedBatches[0], 'user-1');
+
+    // ...now pretend we are device B, which still has the task locally
+    await db.tasks.put(t);
+    expect(await db.tasks.get(t.id)).toBeDefined();
+    const serverRow: Record<string, unknown> = {
+      ...wire[0],
+      user_id: 'user-1',
+      created_at: t.createdAt,
+      done: t.done,
+      updated_at: new Date(Date.now() + 60_000).toISOString(),
+      due_at: t.dueAt,
+      done_at: t.doneAt,
+      subject: t.subject,
+      priority: t.priority,
+      title: t.title,
+      id: t.id,
+    };
+    const puller = fakeTransport({
+      pages: [{ rows: [serverRow], maxUpdatedAt: String(serverRow.updated_at) }],
+    });
+    await pullOnce(puller);
+
+    expect(await db.tasks.get(t.id)).toBeUndefined();
   });
 
   it('a newer local edit is not rewound by a late stamp', async () => {

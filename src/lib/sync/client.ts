@@ -71,15 +71,6 @@ export function remoteTransport(get: () => Promise<SupabaseClient | null>): Sync
         .filter((v): v is string => typeof v === 'string');
       return { rows, maxUpdatedAt: times.length ? times.reduce((a, b) => (a > b ? a : b)) : null };
     },
-
-    async hardDelete(id: string): Promise<void> {
-      const sb = await get();
-      if (!sb) return;
-      const { error } = await sb.from('tasks').delete().eq('id', id);
-      // A 0-row delete is not an error: RLS filtered it because it was never
-      // there (already deleted, or created on a device that never pushed it).
-      if (error) throw new Error(`delete: ${error.message}`);
-    },
   };
 }
 

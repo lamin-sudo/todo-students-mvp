@@ -131,7 +131,14 @@ export function planPull(
 
 export type FlushResult = { pushed: number; settled: number; conflicts: string[]; failed: number };
 
-/** Push every eligible op once; retry/backoff bookkeeping is the outbox's job. */
+/**
+ * Push every eligible op once; retry/backoff bookkeeping is the outbox's job.
+ *
+ * Deletes are NOT special-cased into a DELETE statement. They go through the
+ * same `push_tasks` batch as edits, carrying `deleted_at`, because the server
+ * row must survive as a tombstone for the other devices to pull. A hard delete
+ * here would hide the removal from every device the user did not delete it on.
+ */
 export async function flushOutbox(
   transport: SyncTransport,
   userId: string,
@@ -141,30 +148,12 @@ export async function flushOutbox(
   const result: FlushResult = { pushed: 0, settled: 0, conflicts: [], failed: 0 };
   if (ops.length === 0) return result;
 
-  const hardDeletes = ops.filter((o) => o.op === 'delete');
-  const upserts = ops.filter((o) => o.op !== 'delete');
-
-  // hard deletes first: they are terminal and free the id
-  for (const op of hardDeletes) {
-    if (op.seq === undefined) continue;
-    try {
-      await transport.hardDelete(op.taskId);
-      await removeOp(op.seq);
-      result.settled += 1;
-    } catch (e) {
-      await markFailed(op.seq, e instanceof Error ? e.message : String(e));
-      result.failed += 1;
-    }
-  }
-
-  if (upserts.length === 0) return result;
-
   try {
-    const items: PushItem[] = upserts.map((o) => ({ task: o.payload, op: 'upsert' as const }));
+    const items: PushItem[] = ops.map((o) => ({ task: o.payload, op: o.op }));
     const results = await transport.push(items, userId);
-    result.pushed = upserts.length;
+    result.pushed = ops.length;
 
-    const plan = planPush(upserts, results);
+    const plan = planPush(ops, results);
     for (const seq of plan.settled) await removeOp(seq);
     result.settled += plan.settled.length;
     result.conflicts = plan.conflicts;
@@ -174,7 +163,7 @@ export async function flushOutbox(
 
     // refusals keep their op but record the failure, so backoff applies and a
     // permanently-rejected op ends up parked and VISIBLE instead of looping
-    for (const op of upserts) {
+    for (const op of ops) {
       if (op.seq === undefined) continue;
       if (plan.conflicts.includes(op.taskId)) {
         await markFailed(op.seq, 'server refused (stale revision) — pull to reconcile');
@@ -183,10 +172,10 @@ export async function flushOutbox(
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    for (const op of upserts) {
+    for (const op of ops) {
       if (op.seq !== undefined) await markFailed(op.seq, message);
     }
-    result.failed += upserts.length;
+    result.failed += ops.length;
   }
 
   return result;
