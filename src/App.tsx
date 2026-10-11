@@ -91,7 +91,7 @@ export default function App() {
                 </select>
               )}
 
-              <TaskList tab={tab} subject={subject} />
+              <TaskList tab={tab} subject={subject} onTabChange={setTab} />
 
               <button type="button" className="btn-primary fixed bottom-6 left-1/2 -translate-x-1/2" onClick={() => setFormOpen(true)}>
                 + مهمة جديدة

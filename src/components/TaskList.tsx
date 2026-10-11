@@ -13,7 +13,15 @@ const PRIORITY_CLASS = {
 
 const dtf = new Intl.DateTimeFormat('ar', { dateStyle: 'medium', timeStyle: 'short' });
 
-export default function TaskList({ tab, subject }: { tab: Tab; subject: string }) {
+export default function TaskList({
+  tab,
+  subject,
+  onTabChange,
+}: {
+  tab: Tab;
+  subject: string;
+  onTabChange?: (tab: Tab) => void;
+}) {
   const tasks = useTaskStore((s) => s.tasks);
   const loading = useTaskStore((s) => s.loading);
   const error = useTaskStore((s) => s.error);
@@ -22,6 +30,9 @@ export default function TaskList({ tab, subject }: { tab: Tab; subject: string }
 
   const visible = useMemo(() => selectTasks(tasks, tab, subject), [tasks, tab, subject]);
   const overdueCount = useMemo(() => selectTasks(tasks, 'overdue', '').length, [tasks]);
+  // Open tasks with no deadline live in "الكل" only — the empty state must say so
+  // instead of claiming the app is empty right after a successful save.
+  const undatedOpen = useMemo(() => tasks.filter((t) => !t.done && t.dueAt === null).length, [tasks]);
 
   useEffect(() => {
     void setBadge(overdueCount);
@@ -31,10 +42,28 @@ export default function TaskList({ tab, subject }: { tab: Tab; subject: string }
   if (error) return <p className="card border-red-500/40 text-red-200">مشكل فالتخزين: {error}</p>;
 
   if (visible.length === 0) {
+    if (tasks.length === 0) {
+      return (
+        <div className="card py-10 text-center text-slate-400">
+          <p className="text-base">ما كاين حتى مهمة هنا</p>
+          <p className="mt-1 text-sm">زيد مهمة جديدة بالزر اللي تحت 👇</p>
+        </div>
+      );
+    }
     return (
       <div className="card py-10 text-center text-slate-400">
-        <p className="text-base">ما كاين حتى مهمة هنا</p>
-        <p className="mt-1 text-sm">زيد مهمة جديدة بالزر اللي تحت 👇</p>
+        <p className="text-base">ما كاين حتى مهمة فهاد التبويب</p>
+        {subject && <p className="mt-1 text-sm">الفلترة مفعّلة على المادة: «{subject}»</p>}
+        {tab === 'today' && undatedOpen > 0 && (
+          <p className="mt-2 text-sm text-amber-300">
+            عندك {undatedOpen} {undatedOpen === 1 ? 'مهمة' : 'مهام'} بلا تاريخ التسليم — كتبان غير فـ«الكل».
+          </p>
+        )}
+        {tab === 'today' && undatedOpen > 0 && onTabChange && (
+          <button type="button" className="btn-ghost mt-3" onClick={() => onTabChange('all')}>
+            شوف كل المهام
+          </button>
+        )}
       </div>
     );
   }
